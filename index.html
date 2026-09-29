@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>2K20 Mobile Roster Editor — V0.1</title>
+<style>
+:root{--bg:#0b0f14;--panel:#121923;--panel2:#182230;--text:#eef3f8;--muted:#8fa0b2;--accent:#49a7ff;--border:#263444;--danger:#ff6675}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#0b0f14ee;backdrop-filter:blur(10px);z-index:2}
+h1{font-size:19px;margin:0 0 4px}.sub{font-size:12px;color:var(--muted)}
+main{padding:14px;max-width:900px;margin:auto}.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap}button,.filebtn{border:1px solid var(--border);background:var(--panel2);color:var(--text);padding:11px 13px;border-radius:10px;font-weight:650}
+button.primary{background:var(--accent);color:#06101a;border-color:var(--accent)}button:disabled{opacity:.45}
+.filebtn input{display:none}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.stat{background:#0d141d;border:1px solid var(--border);padding:10px;border-radius:10px}.stat b{display:block;font-size:15px}.stat span{font-size:11px;color:var(--muted)}
+input[type=text],input[type=number]{width:100%;background:#0b1118;border:1px solid var(--border);color:var(--text);padding:11px;border-radius:9px;outline:none}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px}
+#hex{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;overflow:auto;max-height:52vh;background:#080c11;padding:12px;border-radius:10px;border:1px solid var(--border);line-height:1.55}
+.notice{font-size:12px;line-height:1.5;color:#b9c7d5}.ok{color:#77d99b}.warn{color:#ffd166}
+@media(min-width:650px){.stats{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header><h1>🏀 2K20 Mobile Roster Editor</h1><div class="sub">V0.1 • Binary workspace • Android-friendly</div></header>
+<main>
+<section class="card">
+  <div class="row">
+    <label class="filebtn">Open .ROS<input id="file" type="file" accept=".ros,.ROS,application/octet-stream"></label>
+    <button id="save" class="primary" disabled>Export copy</button>
+  </div>
+  <p class="notice">This first version does not pretend to understand unknown fields. It preserves the original bytes and gives us a safe base for reverse-engineering the Android format.</p>
+</section>
+
+<section class="card">
+ <div class="stats">
+  <div class="stat"><b id="name">—</b><span>File</span></div>
+  <div class="stat"><b id="size">—</b><span>Size</span></div>
+  <div class="stat"><b id="sha">—</b><span>SHA-256</span></div>
+  <div class="stat"><b id="status">Waiting</b><span>Status</span></div>
+ </div>
+</section>
+
+<section class="card">
+ <label>Search ASCII / hex</label>
+ <input id="search" type="text" placeholder="Example: 06 8c 7c 14  OR  Lakers">
+ <div class="row" style="margin-top:8px"><button id="find" disabled>Find</button><span id="result" class="notice"></span></div>
+</section>
+
+<section class="card">
+ <div class="row">
+   <div style="flex:1;min-width:140px"><label>Offset (decimal)</label><input id="offset" type="number" min="0" value="0"></div>
+   <div style="flex:1;min-width:140px"><label>Bytes per row</label><input id="width" type="number" min="4" max="32" value="16"></div>
+ </div>
+ <div id="hex" style="margin-top:10px">Open a Roster.ROS file to inspect it.</div>
+</section>
+
+<section class="card">
+ <b>Roadmap</b>
+ <p class="notice">
+  1. Identify header/encryption/obfuscation.<br>
+  2. Locate roster sections and pointers.<br>
+  3. Decode player records and team records.<br>
+  4. Build Players / Teams / Contracts / Attributes / Badges screens.<br>
+  5. Implement checksum/hash repair if the game requires it.<br>
+  6. Test edited files against a backup in NBA 2K20 Mobile.
+ </p>
+ <p class="notice warn">Never overwrite your original roster while testing. Export a new copy each time.</p>
+</section>
+</main>
+<script>
+let bytes=null, fileName="Roster.ROS";
+const $=id=>document.getElementById(id);
+function fmt(n){return n.toLocaleString()+" bytes"}
+async function sha256(a){const h=await crypto.subtle.digest("SHA-256",a);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+function render(){
+ if(!bytes)return;
+ let off=Math.max(0,Math.min(Number($("offset").value)||0,bytes.length-1));
+ let w=Math.max(4,Math.min(32,Number($("width").value)||16)), out=[];
+ for(let r=0;r<80 && off<bytes.length;r++,off+=w){
+   let hex=[], asc=[];
+   for(let i=0;i<w;i++){let v=bytes[off+i]; if(v===undefined){hex.push("  ");asc.push(" ")}else{hex.push(v.toString(16).padStart(2,"0"));asc.push(v>=32&&v<127?String.fromCharCode(v):".")}}
+   out.push(off.toString(16).padStart(8,"0")+"  "+hex.join(" ")+"  |"+asc.join("")+"|");
+ }
+ $("hex").textContent=out.join("\n");
+}
+$("file").onchange=async e=>{
+ const f=e.target.files[0]; if(!f)return;
+ fileName=f.name; bytes=new Uint8Array(await f.arrayBuffer());
+ $("name").textContent=fileName;$("size").textContent=fmt(bytes.length);
+ $("sha").textContent=(await sha256(bytes)).slice(0,16)+"…";$("status").textContent="Loaded";
+ ["save","find"].forEach(id=>$(id).disabled=false);render();
+};
+$("offset").oninput=render;$("width").oninput=render;
+$("save").onclick=()=>{
+ if(!bytes)return;
+ const blob=new Blob([bytes],{type:"application/octet-stream"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+ a.download=fileName.replace(/\.ros$/i,"")+"_edited.ROS";a.click();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+$("find").onclick=()=>{
+ let q=$("search").value.trim(), pos=-1;
+ if(!q)return;
+ if(/^(?:[0-9a-fA-F]{2}\s*)+$/.test(q)){
+   let arr=q.split(/\s+/).filter(Boolean).map(x=>parseInt(x,16));
+   outer:for(let i=0;i<=bytes.length-arr.length;i++){for(let j=0;j<arr.length;j++)if(bytes[i+j]!==arr[j])continue outer;pos=i;break}
+ }else{
+   let needle=new TextEncoder().encode(q.toLowerCase());
+   outer:for(let i=0;i<=bytes.length-needle.length;i++){for(let j=0;j<needle.length;j++){let b=bytes[i+j];if(b>=65&&b<=90)b+=32;if(b!==needle[j])continue outer}pos=i;break}
+ }
+ $("result").textContent=pos>=0?("Found at 0x"+pos.toString(16)+" ("+pos+")"):"Not found";
+ if(pos>=0){$("offset").value=Math.max(0,pos-32);render()}
+};
+</script>
+</body>
+</html>
